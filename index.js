@@ -1,11 +1,19 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const route = require('./router/route');
+
+const PORT = process.env.PORT || 5000;
 const app = express();
 
-const route = require('./route');
-const { addUser, findUser, getRoomUsers, removeUser } = require('./users');
+const {
+    addUser,
+    findUser,
+    getRoomUsers,
+    removeUser,
+} = require('./service/users');
 
 app.use(cors({ origin: '*' }));
 app.use(route);
@@ -27,7 +35,7 @@ io.on('connection', (socket) => {
 
         const serviceMessage = isExist
             ? `${user.name} is back again`
-            : `${user.name} has joined the chat`;
+            : `${user.name} has joined`;
 
         socket.emit('message', {
             data: { user: { name: 'Admin' }, message: serviceMessage },
@@ -74,6 +82,6 @@ io.on('connection', (socket) => {
     });
 });
 
-server.listen(5000, () => {
-    console.log('Server is running');
+server.listen(PORT, () => {
+    console.log(`Server ran on port ${PORT}`);
 });

@@ -1,4 +1,4 @@
-const { trimStr } = require('./utils');
+const { trimStr } = require('../utils/utils');
 
 let users = [];
 
