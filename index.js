@@ -4,6 +4,7 @@ const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const route = require('./router/route');
+const { v4: uuidv4 } = require('uuid');
 
 const PORT = process.env.PORT || 5000;
 const app = express();
@@ -14,6 +15,11 @@ const {
     getRoomUsers,
     removeUser,
 } = require('./service/users');
+const {
+    addMessage,
+    getMessages,
+    clearMessageStorage,
+} = require('./service/messages');
 
 app.use(cors({ origin: '*' }));
 app.use(route);
@@ -28,52 +34,79 @@ const io = new Server(server, {
 });
 
 io.on('connection', (socket) => {
+    // Подключение к чату
     socket.on('join', ({ name, room }) => {
         socket.join(room);
 
         const { user, isExist } = addUser({ name, room });
+        const messageHistory = getMessages();
 
-        const serviceMessage = isExist
-            ? `${user.name} is back again`
-            : `${user.name} has joined`;
+        socket.emit('messageHistory', { data: messageHistory });
 
-        socket.emit('message', {
-            data: { user: { name: 'Admin' }, message: serviceMessage },
-        });
-
-        socket.broadcast.to(user.room).emit('message', {
-            data: {
-                user: { name: 'Admin' },
-                message: serviceMessage,
+        const serviceMessage = {
+            user: { name: 'Admin' },
+            message: {
+                id: uuidv4(),
+                text: isExist
+                    ? `${user.name} is back again`
+                    : `${user.name} has joined`,
             },
-        });
+        };
+
+        socket.emit('message', { data: serviceMessage });
+        addMessage(serviceMessage);
+
+        socket.broadcast
+            .to(user.room)
+            .emit('message', { data: serviceMessage });
+        addMessage(serviceMessage);
 
         io.to(user.room).emit('room', {
             data: { users: getRoomUsers(user.room) },
         });
     });
 
+    // Отправка сообщения
     socket.on('sendMessage', ({ message, params }) => {
         const user = findUser(params);
 
         if (user) {
-            io.to(user.room).emit('message', { data: { user, message } });
+            const newMessage = {
+                user: params,
+                message: { id: uuidv4(), text: message },
+            };
+
+            addMessage(newMessage);
+
+            io.to(user.room).emit('message', {
+                data: newMessage,
+            });
         }
     });
 
+    // Выход из чата
     socket.on('leftRoom', ({ params }) => {
         const user = removeUser(params);
 
         if (user) {
             const { room, name } = user;
+            const usersOnline = getRoomUsers(room);
 
-            io.to(room).emit('message', {
-                data: { user: { name: 'Admin' }, message: `${name} has left` },
-            });
+            // Очищу хранилище сообщений, если все пользователи вышли
+            if (!usersOnline.length) {
+                clearMessageStorage();
+            } else {
+                io.to(room).emit('message', {
+                    data: {
+                        user: { name: 'Admin' },
+                        message: { id: uuidv4(), text: `${name} has left` },
+                    },
+                });
 
-            io.to(room).emit('room', {
-                data: { users: getRoomUsers(room) },
-            });
+                io.to(room).emit('room', {
+                    data: { users: usersOnline },
+                });
+            }
         }
     });
 
